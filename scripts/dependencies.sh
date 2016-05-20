@@ -9,7 +9,10 @@ sudo apt-get install -y autoconf automake pkg-config libtool make pkg-config gcc
 #clone async
 mkdir -p deps
 for dep in midgard baldr sif; do
-	git clone --depth=1 --recurse-submodules --single-branch --branch=master https://github.com/valhalla/$dep.git deps/$dep &
+	git clone --depth=1 --recurse --single-branch https://github.com/valhalla/$dep.git deps/$dep && \
+	pushd deps/$dep && \
+	git fetch --depth=1 origin 'refs/tags/*:refs/tags/*' && \
+	popd &
 done
 wait
 
