@@ -101,7 +101,7 @@ namespace {
 namespace valhalla {
   namespace loki {
     loki_worker_t::loki_worker_t(const boost::property_tree::ptree& config):config(config), reader(config.get_child("mjolnir")),
-        long_request(config.get<float>("loki.logging.long_request")){
+        connectivity_map(reader.GetTileHierarchy()), long_request(config.get<float>("loki.logging.long_request")) {
       // Keep a string noting which actions we support, throw if one isnt supported
       for (const auto& kv : config.get_child("loki.actions")) {
         auto path = "/" + kv.second.get_value<std::string>();
@@ -245,7 +245,8 @@ namespace valhalla {
       if(!costing) {
         //locate doesnt require a filter
         if(action == LOCATE) {
-          costing_filter = loki::PassThroughFilter;
+          edge_filter = loki::PassThroughEdgeFilter;
+          node_filter = loki::PassThroughNodeFilter;
           return;
         }//but everything else does
         else
@@ -271,10 +272,15 @@ namespace valhalla {
         boost::property_tree::ptree overridden = *config_costing;
         for(const auto& r : *request_costing)
           overridden.put_child(r.first, r.second);
-        costing_filter = factory.Create(*costing, overridden)->GetFilter();
+        auto c = factory.Create(*costing, overridden);
+        edge_filter = c->GetEdgeFilter();
+        node_filter = c->GetNodeFilter();
       }// No options to override so use the config options verbatim
-      else
-        costing_filter = factory.Create(*costing, *config_costing)->GetFilter();
+      else {
+        auto c = factory.Create(*costing, *config_costing);
+        edge_filter = c->GetEdgeFilter();
+        node_filter = c->GetNodeFilter();
+      }
     }
 
     void loki_worker_t::cleanup() {
