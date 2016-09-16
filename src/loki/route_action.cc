@@ -40,8 +40,10 @@ namespace valhalla {
 
     void loki_worker_t::init_route(const boost::property_tree::ptree& request) {
       parse_locations(request);
+      //need to check location size here instead of in parse_locations because of locate action needing a different size
       if(locations.size() < 2)
         throw std::runtime_error("Insufficient number of locations provided");
+
       parse_costing(request);
     }
 

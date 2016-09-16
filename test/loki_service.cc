@@ -120,7 +120,8 @@ namespace {
         \"optimized_route\": { \"max_distance\": 200000.0, \"max_locations\": 50}, \
         \"isochrone\": { \"max_contours\": 4, \"max_time\": 120, \"max_locations\": 1}, \
         \"max_shape\": 750000,\
-        \"min_resample\": 10.0 \
+        \"min_resample\": 10.0,\
+        \"trace_route\": { \"max_shape\": 750000 } \
       }, \
      \"costing_options\": { \"auto\": {}, \"pedestrian\": {} } \
       }";

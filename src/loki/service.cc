@@ -36,7 +36,8 @@ namespace {
     {"/sources_to_targets", loki_worker_t::SOURCES_TO_TARGETS},
     {"/optimized_route", loki_worker_t::OPTIMIZED_ROUTE},
     {"/isochrone", loki_worker_t::ISOCHRONE},
-    {"/attributes", loki_worker_t::ATTRIBUTES},
+    {"/trace_route", loki_worker_t::TRACE_ROUTE},
+    {"/trace_attributes", loki_worker_t::TRACE_ATTRIBUTES}
   };
 
   const headers_t::value_type CORS{"Access-Control-Allow-Origin", "*"};
@@ -147,6 +148,49 @@ namespace valhalla {
       valhalla::midgard::logging::Log("location_count::" + std::to_string(request_locations->size()), " [ANALYTICS] ");
     }
 
+    void loki_worker_t::parse_trace(const boost::property_tree::ptree& request) {
+      //we require uncompressed shape or encoded polyline
+      auto input_shape = request.get_child_optional("shape");
+      boost::optional<std::string> encoded_polyline = request.get_optional<std::string>("encoded_polyline");
+      auto gpx = "";
+      auto geojson = "";
+
+      //we require shape or encoded polyline but we dont know which at first
+      try {
+        //uncompressed shape
+        if (input_shape) {
+          for (const auto& latlng : *input_shape){
+            shape.push_back(baldr::Location::FromPtree(latlng.second).latlng_);
+          }
+        }//compressed shape
+        else if (encoded_polyline) {
+          std::list<midgard::PointLL> shape = midgard::decode<std::list<midgard::PointLL> >(*encoded_polyline);
+          for(const auto& p : shape) {
+            shape.emplace_back(midgard::PointLL(p.first, p.second));
+          }
+        } else if (gpx) {
+          //TODO:Add support
+        } else if (geojson){
+          //TODO:Add support
+        }
+        else
+          throw std::runtime_error("No shape provided");
+
+        //not enough shape
+        if (shape.size() < 1)
+          throw std::runtime_error("Insufficient shape provided");
+      }
+      catch (...) {
+        throw std::runtime_error("Insufficiently specified required parameter 'shape' or 'encoded_polyline'");
+      }
+    //there are limits though
+    if(shape.size() > max_shape) {
+      throw std::runtime_error("Too many shape points (" + std::to_string(shape.size()) +"). The limit is " + std::to_string(max_shape));
+    }
+    valhalla::midgard::logging::Log("trace_size::" + std::to_string(shape.size()), " [ANALYTICS] ");
+
+    }
+
     void loki_worker_t::parse_costing(const boost::property_tree::ptree& request) {
       //using the costing we can determine what type of edge filtering to use
        auto costing = request.get_optional<std::string>("costing");
@@ -189,7 +233,8 @@ namespace valhalla {
         config(config), reader(config.get_child("mjolnir")), connectivity_map(reader.GetTileHierarchy()),
         long_request(config.get<float>("loki.logging.long_request")),
         max_contours(config.get<unsigned int>("service_limits.isochrone.max_contours")),
-        max_time(config.get<unsigned int>("service_limits.isochrone.max_time")) {
+        max_time(config.get<unsigned int>("service_limits.isochrone.max_time")),
+        max_shape(config.get<size_t>("service_limits.trace_route.max_shape")) {
 
       // Keep a string noting which actions we support, throw if one isnt supported
       for (const auto& kv : config.get_child("loki.actions")) {
@@ -277,8 +322,9 @@ namespace valhalla {
           case ISOCHRONE:
             result = isochrones(request_pt, info);
             break;
-          case ATTRIBUTES:
-            result = attributes(request_pt, info);
+          case TRACE_ROUTE:
+          case TRACE_ATTRIBUTES:
+            result = trace_route(request_pt, info);
             break;
           default:
             //apparently you wanted something that we figured we'd support but havent written yet
