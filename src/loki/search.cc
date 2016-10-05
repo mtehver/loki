@@ -1,5 +1,6 @@
 #include "loki/search.h"
 #include <valhalla/midgard/linesegment2.h>
+#include <valhalla/midgard/distanceapproximator.h>
 
 #include <unordered_set>
 #include <list>
@@ -150,7 +151,7 @@ PathLocation correlate_node(GraphReader& reader, const Location& location, const
 
     //do we want this edge
     if(edge_filter(edge) != 0.0f) {
-      PathLocation::PathEdge path_edge{std::move(id), 0.f, node->latlng(), PathLocation::NONE};
+      PathLocation::PathEdge path_edge{std::move(id), 0.f, node->latlng(), std::get<1>(closest_point), PathLocation::NONE};
       std::get<2>(closest_point) = edge->forward() ? 0 : info->shape().size() - 2;
       if(!heading_filter(edge, info, closest_point, location.heading_))
         correlated.edges.push_back(std::move(path_edge));
@@ -160,7 +161,7 @@ PathLocation correlate_node(GraphReader& reader, const Location& location, const
 
     //do we want the evil twin
     if(edge_filter(other_edge) != 0.0f) {
-      PathLocation::PathEdge path_edge{std::move(other_id), 1.f, node->latlng(),PathLocation::NONE};
+      PathLocation::PathEdge path_edge{std::move(other_id), 1.f, node->latlng(), std::get<1>(closest_point), PathLocation::NONE};
       std::get<2>(closest_point) = other_edge->forward() ? 0 : info->shape().size() - 2;
       if(!heading_filter(other_edge, tile->edgeinfo(edge->edgeinfo_offset()), closest_point, location.heading_))
         correlated.edges.push_back(std::move(path_edge));
@@ -203,16 +204,16 @@ PathLocation correlate_edge(GraphReader& reader, const Location& location, const
     if(heading_filter(closest_edge, closest_edge_info, closest_point, location.heading_))
       heading_filtered.emplace_back(closest_edge_id, length_ratio, std::get<0>(closest_point), side);
     else
-      correlated.edges.push_back(PathLocation::PathEdge{closest_edge_id, length_ratio, std::get<0>(closest_point), side});
+      correlated.edges.push_back(PathLocation::PathEdge{closest_edge_id, length_ratio, std::get<0>(closest_point), std::get<1>(closest_point), side});
     //correlate its evil twin
     const GraphTile* other_tile;
     auto opposing_edge_id = reader.GetOpposingEdgeId(closest_edge_id, other_tile);
     const DirectedEdge* other_edge;
     if(opposing_edge_id.Is_Valid() && (other_edge = other_tile->directededge(opposing_edge_id)) && edge_filter(other_edge) != 0.0f) {
       if(heading_filter(other_edge, closest_edge_info, closest_point, location.heading_))
-        heading_filtered.emplace_back(opposing_edge_id, 1 - length_ratio, std::get<0>(closest_point), flip_side(side));
+        heading_filtered.emplace_back(opposing_edge_id, 1 - length_ratio, std::get<0>(closest_point), std::get<1>(closest_point), flip_side(side));
       else
-        correlated.edges.push_back(PathLocation::PathEdge{opposing_edge_id, 1 - length_ratio, std::get<0>(closest_point), flip_side(side)});
+        correlated.edges.push_back(PathLocation::PathEdge{opposing_edge_id, 1 - length_ratio, std::get<0>(closest_point), std::get<1>(closest_point), flip_side(side)});
     }
 
     //if we have nothing because of heading we'll just ignore it
@@ -231,10 +232,16 @@ PathLocation correlate_edge(GraphReader& reader, const Location& location, const
 
 std::tuple<PointLL, float, size_t> project(const PointLL& p, const std::vector<PointLL>& shape) {
   size_t closest_segment = 0;
-  float closest_distance = std::numeric_limits<float>::max();
+  float sq_closest_distance = std::numeric_limits<float>::max();
   PointLL closest_point{};
+  DistanceApproximator approx(p);
+
+  // Longitude (x) is scaled by the cos of the latitude so that distances are
+  // correct in lat,lon space
+  float lon_scale = cosf(p.lat() * kRadPerDeg);
 
   //for each segment
+  PointLL point;
   for(size_t i = 0; i < shape.size() - 1; ++i) {
     //project a onto b where b is the origin vector representing this segment
     //and a is the origin vector to the point we are projecting, (a.b/b.b)*b
@@ -242,33 +249,32 @@ std::tuple<PointLL, float, size_t> project(const PointLL& p, const std::vector<P
     const auto& v = shape[i + 1];
     auto bx = v.first - u.first;
     auto by = v.second - u.second;
-    auto sq = bx*bx + by*by;
-    //avoid divided-by-zero which gives a NaN scale, otherwise comparisons below will fail
-    const auto scale = sq > 0? (((p.first - u.first)*bx + (p.second - u.second)*by) / sq) : 0.f;
+
+    // Scale longitude when finding the projection. Avoid divided-by-zero
+    // which gives a NaN scale, otherwise comparisons below will fail
+    auto bx2 = bx * lon_scale;
+    auto sq = bx2*bx2 + by*by;
+    auto scale = sq > 0 ?  (((p.first - u.first)*lon_scale*bx2 + (p.second - u.second)*by) / sq) : 0.f;
+
     //projects along the ray before u
     if(scale <= 0.f) {
-      bx = u.first;
-      by = u.second;
+      point = { u.first, u.second };
     }//projects along the ray after v
     else if(scale >= 1.f) {
-      bx = v.first;
-      by = v.second;
+      point = { v.first, v.second };
     }//projects along the ray between u and v
     else {
-      bx = bx*scale + u.first;
-      by = by*scale + u.second;
+      point = { u.first+bx*scale, u.second+by*scale };
     }
     //check if this point is better
-    PointLL point(bx, by);
-    const auto distance = p.Distance(point);
-    if(distance < closest_distance) {
+    const auto sq_distance = approx.DistanceSquared(point);
+    if(sq_distance < sq_closest_distance) {
       closest_segment = i;
-      closest_distance = distance;
+      sq_closest_distance = sq_distance;
       closest_point = std::move(point);
     }
   }
-
-  return std::make_tuple(std::move(closest_point), closest_distance, closest_segment);
+  return std::make_tuple(std::move(closest_point), sqrt(sq_closest_distance), closest_segment);
 }
 
 //TODO: this is frought with peril. to properly to this we need to know
@@ -415,6 +421,9 @@ PathLocation search(const Location& location, GraphReader& reader, const EdgeFil
     }
   }
 
+  // recalculate accurate distance
+  std::get<1>(closest_point) = location.latlng_.Distance(std::get<0>(closest_point));
+
   //keep track of bins we looked in but only the ones that had something
   //would rather log this in the service only, so lets figure a way to pass it back
   //midgard::logging::Log("valhalla_loki_bins_searched::" + std::to_string(bins), " [ANALYTICS] ");
@@ -427,9 +436,9 @@ PathLocation search(const Location& location, GraphReader& reader, const EdgeFil
   //it was the begin node
   if((front && closest_edge->forward()) || (back && !closest_edge->forward())) {
     const GraphTile* other_tile;
+    auto opposing_edge = reader.GetOpposingEdge(closest_edge_id, other_tile);
     if(!other_tile)
       throw std::runtime_error("No suitable edges near location");
-    auto opposing_edge = reader.GetOpposingEdge(closest_edge_id, other_tile);
     return correlate_node(reader, location, edge_filter, closest_tile, closest_tile->node(opposing_edge->endnode()), std::get<1>(closest_point));
   }
   //it was the end node
