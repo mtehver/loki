@@ -31,20 +31,20 @@ namespace valhalla {
 
       prime_server::worker_t::result_t jsonify_error(const baldr::valhalla_exception_t& exception, prime_server::http_request_t::info_t& request_info) const;
       void parse_locations(const boost::property_tree::ptree& request);
-      void parse_trace(const boost::property_tree::ptree& request);
+      void parse_trace(boost::property_tree::ptree& request);
       void parse_costing(const boost::property_tree::ptree& request);
 
       void init_locate(const boost::property_tree::ptree& request);
       void init_route(const boost::property_tree::ptree& request);
       void init_matrix(ACTION_TYPE action, boost::property_tree::ptree& request);
       void init_isochrones(const boost::property_tree::ptree& request);
-      void init_trace(const boost::property_tree::ptree& request);
+      void init_trace(boost::property_tree::ptree& request);
 
       prime_server::worker_t::result_t locate(const boost::property_tree::ptree& request, prime_server::http_request_t::info_t& request_info);
       prime_server::worker_t::result_t route(boost::property_tree::ptree& request, prime_server::http_request_t::info_t& request_info);
       prime_server::worker_t::result_t matrix(ACTION_TYPE action,boost::property_tree::ptree& request, prime_server::http_request_t::info_t& request_info);
       prime_server::worker_t::result_t isochrones(boost::property_tree::ptree& request, prime_server::http_request_t::info_t& request_info);
-      prime_server::worker_t::result_t trace_route(const boost::property_tree::ptree& request, prime_server::http_request_t::info_t& request_info);
+      prime_server::worker_t::result_t trace_route(boost::property_tree::ptree& request, prime_server::http_request_t::info_t& request_info);
       prime_server::worker_t::result_t trace_attributes(const boost::property_tree::ptree& request, prime_server::http_request_t::info_t& request_info);
 
       boost::property_tree::ptree config;

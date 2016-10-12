@@ -150,44 +150,51 @@ namespace valhalla {
       valhalla::midgard::logging::Log("location_count::" + std::to_string(request_locations->size()), " [ANALYTICS] ");
     }
 
-    void loki_worker_t::parse_trace(const boost::property_tree::ptree& request) {
+    void loki_worker_t::parse_trace(boost::property_tree::ptree& request) {
       //we require uncompressed shape or encoded polyline
       auto input_shape = request.get_child_optional("shape");
       boost::optional<std::string> encoded_polyline = request.get_optional<std::string>("encoded_polyline");
+      boost::property_tree::ptree shape_child;
       auto gpx = "";
       auto geojson = "";
 
       //we require shape or encoded polyline but we dont know which at first
       try {
         //uncompressed shape
+        //we dont need to do this unless we want to add some validation
         if (input_shape) {
           for (const auto& latlng : *input_shape){
             shape.push_back(baldr::Location::FromPtree(latlng.second).latlng_);
           }
         }//compressed shape
+        //if we receive as encoded then we need to add as shape to request
         else if (encoded_polyline) {
-          std::list<midgard::PointLL> shape = midgard::decode<std::list<midgard::PointLL> >(*encoded_polyline);
-          for(const auto& p : shape) {
-            shape.emplace_back(midgard::PointLL(p.first, p.second));
+          shape = midgard::decode<std::list<midgard::PointLL> >(*encoded_polyline);
+          for(const auto& pt : shape) {
+            boost::property_tree::ptree point_child;
+            point_child.put("lon", pt.first);
+            point_child.put("lat", pt.second);
+            shape_child.push_back(std::make_pair("",point_child));
           }
+          request.add_child("shape", shape_child);
         } else if (gpx) {
           //TODO:Add support
         } else if (geojson){
           //TODO:Add support
         }
         else
-          throw std::runtime_error("No shape provided");
+          throw valhalla_exception_t{400, 126};
 
         //not enough shape
         if (shape.size() < 1)
-          throw std::runtime_error("Insufficient shape provided");
+          throw valhalla_exception_t{400, 123};
       }
       catch (...) {
-        throw std::runtime_error("Insufficiently specified required parameter 'shape' or 'encoded_polyline'");
+        throw valhalla_exception_t{400, 114};
       }
     //there are limits though
     if(shape.size() > max_shape) {
-      throw std::runtime_error("Too many shape points (" + std::to_string(shape.size()) +"). The limit is " + std::to_string(max_shape));
+      throw valhalla_exception_t{400, 153, "(" + std::to_string(shape.size()) +"). The limit is " + std::to_string(max_shape)};
     }
     valhalla::midgard::logging::Log("trace_size::" + std::to_string(shape.size()), " [ANALYTICS] ");
 
@@ -351,6 +358,7 @@ namespace valhalla {
       locations.clear();
       sources.clear();
       targets.clear();
+      shape.clear();
       if(reader.OverCommitted())
         reader.Clear();
     }

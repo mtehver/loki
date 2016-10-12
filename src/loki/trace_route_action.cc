@@ -9,12 +9,12 @@ using namespace valhalla::baldr;
 namespace valhalla {
   namespace loki {
 
-    void loki_worker_t::init_trace(const boost::property_tree::ptree& request) {
+    void loki_worker_t::init_trace(boost::property_tree::ptree& request) {
       parse_trace(request);
       parse_costing(request);
     }
 
-    worker_t::result_t loki_worker_t::trace_route(const boost::property_tree::ptree& request, http_request_t::info_t& request_info) {
+    worker_t::result_t loki_worker_t::trace_route(boost::property_tree::ptree& request, http_request_t::info_t& request_info) {
       init_trace(request);
 
       //pass it on to thor
