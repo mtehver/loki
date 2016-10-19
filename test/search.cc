@@ -45,7 +45,8 @@ namespace {
 //  5 | / 6
 //    |/
 //    c
-TileHierarchy h("test/fake_tiles");
+auto storage = std::make_shared<GraphTileFsStorage>("test/fake_tiles");
+TileHierarchy h(storage);
 GraphId tile_id = h.GetGraphId({.125,.125}, 2);
 std::pair<GraphId, PointLL> b({tile_id.tileid(), tile_id.level(), 0}, {.01, .2});
 std::pair<GraphId, PointLL> a({tile_id.tileid(), tile_id.level(), 1}, {.01, .1});
