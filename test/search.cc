@@ -6,7 +6,8 @@
 #include <unordered_set>
 
 #include <valhalla/baldr/graphid.h>
-#include <valhalla/baldr/graphreader.h>
+#include <valhalla/baldr/graphfsreader.h>
+#include <valhalla/baldr/graphtilefsstorage.h>
 #include <valhalla/baldr/location.h>
 #include <valhalla/midgard/pointll.h>
 #include <valhalla/midgard/vector2.h>
@@ -150,7 +151,7 @@ void search(const valhalla::baldr::Location& location, bool expected_node, const
   boost::property_tree::ptree conf;
   boost::property_tree::json_parser::read_json(json, conf);
 
-  valhalla::baldr::GraphReader reader(conf);
+  valhalla::baldr::GraphFsReader reader(conf);
   valhalla::baldr::PathLocation p = valhalla::loki::Search(location, reader,
     valhalla::loki::PassThroughEdgeFilter, valhalla::loki::PassThroughNodeFilter);
 
